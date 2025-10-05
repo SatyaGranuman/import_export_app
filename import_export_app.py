@@ -2,119 +2,164 @@ import streamlit as st
 import pandas as pd
 import os
 
-# -----------------------------
-# FILE PATHS
-# -----------------------------
-PURCHASE_FILE = "purchases.xlsx"
-SALES_FILE = "sales.xlsx"
-ACCOUNT_FILE = "accounts.xlsx"
+# ------------------------
+# User file
+# ------------------------
+users_file = "users.xlsx"
 
-# -----------------------------
-# LOAD OR CREATE DATA
-# -----------------------------
-def load_or_create(file, columns):
-    if os.path.exists(file):
-        return pd.read_excel(file)
-    else:
-        return pd.DataFrame(columns=columns)
+# Create users file if it doesn't exist
+if not os.path.exists(users_file):
+    pd.DataFrame({
+        "username": ["admin", "sales", "accountant"],
+        "password": ["admin123", "sales123", "acc123"],
+        "role": ["admin", "sales", "accountant"]
+    }).to_excel(users_file, index=False)
 
-purchase_df = load_or_create(PURCHASE_FILE, ["PurchaseID", "Supplier", "Item", "Quantity", "UnitPrice", "Total"])
-sales_df = load_or_create(SALES_FILE, ["SalesID", "Customer", "Item", "Quantity", "UnitPrice", "Total"])
-account_df = load_or_create(ACCOUNT_FILE, ["Type", "Description", "Amount"])
+# Load users into session state
+if "users" not in st.session_state:
+    st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
 
-# -----------------------------
-# SAVE DATA
-# -----------------------------
-def save_data():
-    purchase_df.to_excel(PURCHASE_FILE, index=False)
-    sales_df.to_excel(SALES_FILE, index=False)
-    account_df.to_excel(ACCOUNT_FILE, index=False)
+# ------------------------
+# Initialize session state
+# ------------------------
+if "login" not in st.session_state:
+    st.session_state.login = False
 
-# -----------------------------
-# ACCOUNTING LOGIC
-# -----------------------------
-def update_accounting(entry_type, description, amount):
-    global account_df
-    new_row = pd.DataFrame([[entry_type, description, amount]], columns=account_df.columns)
-    account_df = pd.concat([account_df, new_row], ignore_index=True)
-    save_data()
+if "user_role" not in st.session_state:
+    st.session_state.user_role = None
 
-# -----------------------------
-# STREAMLIT APP
-# -----------------------------
-st.set_page_config(page_title="Import-Export ERP", layout="wide")
-st.title("🌍 Import–Export Business Manager")
+# ------------------------
+# Data files
+# ------------------------
+purchases_file = "purchases.xlsx"
+sales_file = "sales.xlsx"
+accounts_file = "accounts.xlsx"
 
-tab1, tab2, tab3 = st.tabs(["📦 Purchases", "💼 Sales", "📊 Accounting"])
+for file, columns in [(purchases_file, ["ID", "Date", "Supplier", "Item", "Qty", "Unit Price", "Total"]),
+                      (sales_file, ["ID", "Date", "Customer", "Item", "Qty", "Unit Price", "Total"]),
+                      (accounts_file, ["Revenue", "Cost", "Profit"])]:
+    if not os.path.exists(file):
+        pd.DataFrame(columns=columns).to_excel(file, index=False)
 
-# -----------------------------
-# PURCHASE TAB
-# -----------------------------
-with tab1:
-    st.header("Purchase Management")
+# ------------------------
+# App title
+# ------------------------
+st.title("Import–Export Business Manager")
 
-    with st.form("add_purchase_form"):
-        col1, col2, col3, col4, col5 = st.columns(5)
-        pid = col1.text_input("Purchase ID")
-        supplier = col2.text_input("Supplier")
-        item = col3.text_input("Item")
-        qty = col4.number_input("Quantity", min_value=1, step=1)
-        price = col5.number_input("Unit Price", min_value=0.0, step=0.1)
-        submitted = st.form_submit_button("➕ Add Purchase")
+# ------------------------
+# Login screen
+# ------------------------
+if not st.session_state.login:
+    st.subheader("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        users = st.session_state.users
+        if username in users and users[username]["password"] == password:
+            st.session_state.login = True
+            st.session_state.user = username
+            st.session_state.user_role = users[username]["role"]
+            st.success(f"Welcome {username} ({st.session_state.user_role})!")
+        else:
+            st.error("Invalid username or password")
 
-        if submitted:
-            total = qty * price
-            new_row = pd.DataFrame([[pid, supplier, item, qty, price, total]], columns=purchase_df.columns)
-            purchase_df = pd.concat([purchase_df, new_row], ignore_index=True)
-            update_accounting("Expense", f"Purchase {item} from {supplier}", total)
-            save_data()
-            st.success(f"Added purchase of {item} from {supplier} (Total ₹{total:.2f})")
+# ------------------------
+# Main App after login
+# ------------------------
+else:
+    st.write(f"Logged in as: {st.session_state.user} ({st.session_state.user_role})")
 
-    st.subheader("📄 Purchase Records")
-    st.dataframe(purchase_df, use_container_width=True)
+    # --- Admin: manage users ---
+    if st.session_state.user_role == "admin":
+        st.subheader("User Management")
+        with st.expander("Create New User"):
+            new_user = st.text_input("New Username")
+            new_pass = st.text_input("New Password", type="password")
+            role = st.selectbox("Role", ["sales", "accountant"])
+            if st.button("Add User"):
+                if new_user in st.session_state.users:
+                    st.error("Username already exists!")
+                else:
+                    st.session_state.users[new_user] = {"password": new_pass, "role": role}
+                    # Save to Excel
+                    users_df = pd.DataFrame.from_dict(st.session_state.users, orient="index")
+                    users_df.reset_index(inplace=True)
+                    users_df.rename(columns={"index": "username"}, inplace=True)
+                    users_df.to_excel(users_file, index=False)
+                    st.success(f"User '{new_user}' added with role '{role}'!")
 
-# -----------------------------
-# SALES TAB
-# -----------------------------
-with tab2:
-    st.header("Sales Management")
+        st.write("### Current Users")
+        for u, info in st.session_state.users.items():
+            st.write(f"- {u} ({info['role']})")
 
-    with st.form("add_sales_form"):
-        col1, col2, col3, col4, col5 = st.columns(5)
-        sid = col1.text_input("Sales ID")
-        customer = col2.text_input("Customer")
-        item = col3.text_input("Item")
-        qty = col4.number_input("Quantity", min_value=1, step=1)
-        price = col5.number_input("Unit Price", min_value=0.0, step=0.1)
-        submitted = st.form_submit_button("➕ Add Sale")
+    # --- Determine accessible tabs ---
+    role_tabs = {
+        "admin": ["Purchases", "Sales", "Accounting", "User Management"],
+        "sales": ["Sales"],
+        "accountant": ["Accounting"]
+    }
 
-        if submitted:
-            total = qty * price
-            new_row = pd.DataFrame([[sid, customer, item, qty, price, total]], columns=sales_df.columns)
-            sales_df = pd.concat([sales_df, new_row], ignore_index=True)
-            update_accounting("Income", f"Sale {item} to {customer}", total)
-            save_data()
-            st.success(f"Added sale of {item} to {customer} (Total ₹{total:.2f})")
+    available_tabs = role_tabs.get(st.session_state.user_role, [])
 
-    st.subheader("📄 Sales Records")
-    st.dataframe(sales_df, use_container_width=True)
+    if available_tabs:
+        tab = st.radio("Select Tab", available_tabs)
 
-# -----------------------------
-# ACCOUNTING TAB
-# -----------------------------
-with tab3:
-    st.header("Accounting & Profit / Loss Summary")
-    st.subheader("💰 Ledger Entries")
-    st.dataframe(account_df, use_container_width=True)
+        # ------------------------
+        # Purchases tab
+        # ------------------------
+        if tab == "Purchases":
+            st.subheader("Purchase Management")
+            df = pd.read_excel(purchases_file)
+            st.dataframe(df)
 
-    income = account_df[account_df['Type'] == 'Income']['Amount'].sum()
-    expense = account_df[account_df['Type'] == 'Expense']['Amount'].sum()
-    profit = income - expense
+            with st.expander("Add New Purchase"):
+                date = st.date_input("Date")
+                supplier = st.text_input("Supplier")
+                item = st.text_input("Item")
+                qty = st.number_input("Quantity", min_value=1)
+                unit_price = st.number_input("Unit Price", min_value=0.0)
+                if st.button("Add Purchase"):
+                    new_id = len(df) + 1
+                    total = qty * unit_price
+                    df.loc[len(df)] = [new_id, date, supplier, item, qty, unit_price, total]
+                    df.to_excel(purchases_file, index=False)
+                    st.success("Purchase added!")
+                    st.experimental_rerun()
 
-    st.metric("Total Income", f"₹{income:,.2f}")
-    st.metric("Total Expense", f"₹{expense:,.2f}")
-    st.metric("Net Profit / Loss", f"₹{profit:,.2f}", delta_color="inverse")
+        # ------------------------
+        # Sales tab
+        # ------------------------
+        elif tab == "Sales":
+            st.subheader("Sales Management")
+            df = pd.read_excel(sales_file)
+            st.dataframe(df)
 
-    if st.button("💾 Save All Data"):
-        save_data()
-        st.success("All data saved successfully!")
+            with st.expander("Add New Sale"):
+                date = st.date_input("Date")
+                customer = st.text_input("Customer")
+                item = st.text_input("Item")
+                qty = st.number_input("Quantity", min_value=1, key="sales_qty")
+                unit_price = st.number_input("Unit Price", min_value=0.0, key="sales_unit_price")
+                if st.button("Add Sale"):
+                    new_id = len(df) + 1
+                    total = qty * unit_price
+                    df.loc[len(df)] = [new_id, date, customer, item, qty, unit_price, total]
+                    df.to_excel(sales_file, index=False)
+                    st.success("Sale added!")
+                    st.experimental_rerun()
+
+        # ------------------------
+        # Accounting tab
+        # ------------------------
+        elif tab == "Accounting":
+            st.subheader("Profit & Loss")
+            purchases_df = pd.read_excel(purchases_file)
+            sales_df = pd.read_excel(sales_file)
+
+            total_revenue = sales_df["Total"].sum()
+            total_cost = purchases_df["Total"].sum()
+            profit = total_revenue - total_cost
+
+            st.write(f"**Total Revenue:** {total_revenue}")
+            st.write(f"**Total Cost:** {total_cost}")
+            st.write(f"**Profit:** {profit}")
