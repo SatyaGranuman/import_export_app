@@ -163,3 +163,19 @@ else:
             st.write(f"**Total Revenue:** {total_revenue}")
             st.write(f"**Total Cost:** {total_cost}")
             st.write(f"**Profit:** {profit}")
+import pandas as pd
+import os
+
+users_file = "users.xlsx"
+
+# Create default users file if it does not exist
+if not os.path.exists(users_file):
+    default_users = pd.DataFrame({
+        "username": ["admin", "sales", "accountant"],
+        "password": ["admin123", "sales123", "acc123"],
+        "role": ["admin", "sales", "accountant"]
+    })
+    default_users.to_excel(users_file, index=False)
+
+# Load users into session state
+st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
