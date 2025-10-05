@@ -3,41 +3,55 @@ import pandas as pd
 import os
 
 # ------------------------
-# User file
+# File paths
 # ------------------------
 users_file = "users.xlsx"
+purchases_file = "purchases.xlsx"
+sales_file = "sales.xlsx"
 
-# Create users file if it doesn't exist
-if not os.path.exists(users_file):
-    pd.DataFrame({
-        "username": ["admin", "sales", "accountant"],
-        "password": ["admin123", "sales123", "acc123"],
-        "role": ["admin", "sales", "accountant"]
-    }).to_excel(users_file, index=False)
+# ------------------------
+# Initialize default users
+# ------------------------
+default_users = {
+    "admin": {"password": "admin123", "role": "admin"},
+    "sales": {"password": "sales123", "role": "sales"},
+    "accountant": {"password": "acc123", "role": "accountant"}
+}
 
-# Load users into session state
+# ------------------------
+# Load users safely
+# ------------------------
 if "users" not in st.session_state:
-    st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
+    if os.path.exists(users_file):
+        try:
+            st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
+        except Exception as e:
+            st.error(f"Error reading users file: {e}")
+            st.session_state.users = default_users.copy()
+    else:
+        st.session_state.users = default_users.copy()
+        # Save default users for future
+        df_users = pd.DataFrame([
+            {"username": u, "password": info["password"], "role": info["role"]}
+            for u, info in default_users.items()
+        ])
+        df_users.to_excel(users_file, index=False)
 
 # ------------------------
 # Initialize session state
 # ------------------------
 if "login" not in st.session_state:
     st.session_state.login = False
-
 if "user_role" not in st.session_state:
     st.session_state.user_role = None
 
 # ------------------------
-# Data files
+# Ensure Excel files exist
 # ------------------------
-purchases_file = "purchases.xlsx"
-sales_file = "sales.xlsx"
-accounts_file = "accounts.xlsx"
-
-for file, columns in [(purchases_file, ["ID", "Date", "Supplier", "Item", "Qty", "Unit Price", "Total"]),
-                      (sales_file, ["ID", "Date", "Customer", "Item", "Qty", "Unit Price", "Total"]),
-                      (accounts_file, ["Revenue", "Cost", "Profit"])]:
+for file, columns in [
+    (purchases_file, ["ID", "Date", "Supplier", "Item", "Qty", "Unit Price", "Total"]),
+    (sales_file, ["ID", "Date", "Customer", "Item", "Qty", "Unit Price", "Total"])
+]:
     if not os.path.exists(file):
         pd.DataFrame(columns=columns).to_excel(file, index=False)
 
@@ -163,19 +177,3 @@ else:
             st.write(f"**Total Revenue:** {total_revenue}")
             st.write(f"**Total Cost:** {total_cost}")
             st.write(f"**Profit:** {profit}")
-import pandas as pd
-import os
-
-users_file = "users.xlsx"
-
-# Create default users file if it does not exist
-if not os.path.exists(users_file):
-    default_users = pd.DataFrame({
-        "username": ["admin", "sales", "accountant"],
-        "password": ["admin123", "sales123", "acc123"],
-        "role": ["admin", "sales", "accountant"]
-    })
-    default_users.to_excel(users_file, index=False)
-
-# Load users into session state
-st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
