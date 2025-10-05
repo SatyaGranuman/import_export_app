@@ -10,7 +10,7 @@ purchases_file = "purchases.xlsx"
 sales_file = "sales.xlsx"
 
 # ------------------------
-# Initialize default users
+# Default users
 # ------------------------
 default_users = {
     "admin": {"password": "admin123", "role": "admin"},
@@ -19,161 +19,162 @@ default_users = {
 }
 
 # ------------------------
-# Load users safely
-# ------------------------
-if "users" not in st.session_state:
-    if os.path.exists(users_file):
-        try:
-            st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
-        except Exception as e:
-            st.error(f"Error reading users file: {e}")
-            st.session_state.users = default_users.copy()
-    else:
-        st.session_state.users = default_users.copy()
-        # Save default users for future
-        df_users = pd.DataFrame([
-            {"username": u, "password": info["password"], "role": info["role"]}
-            for u, info in default_users.items()
-        ])
-        df_users.to_excel(users_file, index=False)
-
-# ------------------------
 # Initialize session state
 # ------------------------
-if "login" not in st.session_state:
-    st.session_state.login = False
-if "user_role" not in st.session_state:
-    st.session_state.user_role = None
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+if "role" not in st.session_state:
+    st.session_state.role = ""
+if "users" not in st.session_state:
+    try:
+        st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
+    except Exception:
+        st.session_state.users = default_users.copy()
 
 # ------------------------
-# Ensure Excel files exist
+# Login function
 # ------------------------
-for file, columns in [
-    (purchases_file, ["ID", "Date", "Supplier", "Item", "Qty", "Unit Price", "Total"]),
-    (sales_file, ["ID", "Date", "Customer", "Item", "Qty", "Unit Price", "Total"])
-]:
-    if not os.path.exists(file):
-        pd.DataFrame(columns=columns).to_excel(file, index=False)
-
-# ------------------------
-# App title
-# ------------------------
-st.title("Import–Export Business Manager")
-
-# ------------------------
-# Login screen
-# ------------------------
-if not st.session_state.login:
-    st.subheader("Login")
+def login():
+    st.title("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
         users = st.session_state.users
         if username in users and users[username]["password"] == password:
-            st.session_state.login = True
-            st.session_state.user = username
-            st.session_state.user_role = users[username]["role"]
-            st.success(f"Welcome {username} ({st.session_state.user_role})!")
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.role = users[username]["role"]
+            st.success(f"Logged in as {username} ({st.session_state.role})")
         else:
             st.error("Invalid username or password")
 
 # ------------------------
-# Main App after login
+# Logout function
 # ------------------------
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
+    st.success("Logged out successfully")
+
+# ------------------------
+# Load Excel safely
+# ------------------------
+def load_excel(file_path, columns=[]):
+    try:
+        if os.path.exists(file_path):
+            df = pd.read_excel(file_path)
+        else:
+            df = pd.DataFrame(columns=columns)
+        return df
+    except Exception as e:
+        st.error(f"Error reading {file_path}: {e}")
+        return pd.DataFrame(columns=columns)
+
+# ------------------------
+# Save Excel safely
+# ------------------------
+def save_excel(df, file_path):
+    try:
+        df.to_excel(file_path, index=False)
+    except Exception as e:
+        st.error(f"Error saving {file_path}: {e}")
+
+# ------------------------
+# App main
+# ------------------------
+if not st.session_state.logged_in:
+    login()
 else:
-    st.write(f"Logged in as: {st.session_state.user} ({st.session_state.user_role})")
+    st.sidebar.write(f"Logged in as: {st.session_state.username} ({st.session_state.role})")
+    if st.sidebar.button("Logout"):
+        logout()
 
-    # --- Admin: manage users ---
-    if st.session_state.user_role == "admin":
-        st.subheader("User Management")
-        with st.expander("Create New User"):
-            new_user = st.text_input("New Username")
-            new_pass = st.text_input("New Password", type="password")
-            role = st.selectbox("Role", ["sales", "accountant"])
-            if st.button("Add User"):
-                if new_user in st.session_state.users:
-                    st.error("Username already exists!")
-                else:
-                    st.session_state.users[new_user] = {"password": new_pass, "role": role}
-                    # Save to Excel
-                    users_df = pd.DataFrame.from_dict(st.session_state.users, orient="index")
-                    users_df.reset_index(inplace=True)
-                    users_df.rename(columns={"index": "username"}, inplace=True)
-                    users_df.to_excel(users_file, index=False)
-                    st.success(f"User '{new_user}' added with role '{role}'!")
+    tab = st.sidebar.selectbox("Select Tab", ["Purchases", "Sales", "Accounting", "User Management"])
 
-        st.write("### Current Users")
-        for u, info in st.session_state.users.items():
-            st.write(f"- {u} ({info['role']})")
+    # ------------------------
+    # Purchases Tab
+    # ------------------------
+    if tab == "Purchases":
+        st.header("Purchase Management")
+        purchases_columns = ["Date", "Item", "Quantity", "Price"]
+        df_purchases = load_excel(purchases_file, purchases_columns)
+        st.dataframe(df_purchases)
 
-    # --- Determine accessible tabs ---
-    role_tabs = {
-        "admin": ["Purchases", "Sales", "Accounting", "User Management"],
-        "sales": ["Sales"],
-        "accountant": ["Accounting"]
-    }
-
-    available_tabs = role_tabs.get(st.session_state.user_role, [])
-
-    if available_tabs:
-        tab = st.radio("Select Tab", available_tabs)
-
-        # ------------------------
-        # Purchases tab
-        # ------------------------
-        if tab == "Purchases":
-            st.subheader("Purchase Management")
-            df = pd.read_excel(purchases_file)
-            st.dataframe(df)
-
-            with st.expander("Add New Purchase"):
+        if st.session_state.role in ["admin", "sales"]:
+            with st.form("Add Purchase"):
                 date = st.date_input("Date")
-                supplier = st.text_input("Supplier")
                 item = st.text_input("Item")
                 qty = st.number_input("Quantity", min_value=1)
-                unit_price = st.number_input("Unit Price", min_value=0.0)
-                if st.button("Add Purchase"):
-                    new_id = len(df) + 1
-                    total = qty * unit_price
-                    df.loc[len(df)] = [new_id, date, supplier, item, qty, unit_price, total]
-                    df.to_excel(purchases_file, index=False)
-                    st.success("Purchase added!")
-                    st.experimental_rerun()
+                price = st.number_input("Price", min_value=0.0)
+                submitted = st.form_submit_button("Add Purchase")
+                if submitted:
+                    new_row = pd.DataFrame([[date, item, qty, price]], columns=purchases_columns)
+                    df_purchases = pd.concat([df_purchases, new_row], ignore_index=True)
+                    save_excel(df_purchases, purchases_file)
+                    st.success("Purchase added successfully")
 
-        # ------------------------
-        # Sales tab
-        # ------------------------
-        elif tab == "Sales":
-            st.subheader("Sales Management")
-            df = pd.read_excel(sales_file)
-            st.dataframe(df)
+    # ------------------------
+    # Sales Tab
+    # ------------------------
+    elif tab == "Sales":
+        st.header("Sales Management")
+        sales_columns = ["Date", "Item", "Quantity", "Price"]
+        df_sales = load_excel(sales_file, sales_columns)
+        st.dataframe(df_sales)
 
-            with st.expander("Add New Sale"):
+        if st.session_state.role in ["admin", "sales"]:
+            with st.form("Add Sale"):
                 date = st.date_input("Date")
-                customer = st.text_input("Customer")
                 item = st.text_input("Item")
-                qty = st.number_input("Quantity", min_value=1, key="sales_qty")
-                unit_price = st.number_input("Unit Price", min_value=0.0, key="sales_unit_price")
-                if st.button("Add Sale"):
-                    new_id = len(df) + 1
-                    total = qty * unit_price
-                    df.loc[len(df)] = [new_id, date, customer, item, qty, unit_price, total]
-                    df.to_excel(sales_file, index=False)
-                    st.success("Sale added!")
-                    st.experimental_rerun()
+                qty = st.number_input("Quantity", min_value=1)
+                price = st.number_input("Price", min_value=0.0)
+                submitted = st.form_submit_button("Add Sale")
+                if submitted:
+                    new_row = pd.DataFrame([[date, item, qty, price]], columns=sales_columns)
+                    df_sales = pd.concat([df_sales, new_row], ignore_index=True)
+                    save_excel(df_sales, sales_file)
+                    st.success("Sale added successfully")
 
-        # ------------------------
-        # Accounting tab
-        # ------------------------
-        elif tab == "Accounting":
-            st.subheader("Profit & Loss")
-            purchases_df = pd.read_excel(purchases_file)
-            sales_df = pd.read_excel(sales_file)
+    # ------------------------
+    # Accounting Tab
+    # ------------------------
+    elif tab == "Accounting":
+        st.header("Profit & Loss")
+        df_purchases = load_excel(purchases_file, ["Date", "Item", "Quantity", "Price"])
+        df_sales = load_excel(sales_file, ["Date", "Item", "Quantity", "Price"])
+        total_purchase = df_purchases["Price"].sum() if not df_purchases.empty else 0
+        total_sales = df_sales["Price"].sum() if not df_sales.empty else 0
+        profit = total_sales - total_purchase
+        st.metric("Total Purchases", total_purchase)
+        st.metric("Total Sales", total_sales)
+        st.metric("Profit / Loss", profit)
 
-            total_revenue = sales_df["Total"].sum()
-            total_cost = purchases_df["Total"].sum()
-            profit = total_revenue - total_cost
-
-            st.write(f"**Total Revenue:** {total_revenue}")
-            st.write(f"**Total Cost:** {total_cost}")
-            st.write(f"**Profit:** {profit}")
+    # ------------------------
+    # User Management Tab
+    # ------------------------
+    elif tab == "User Management":
+        st.header("User Management")
+        if st.session_state.role != "admin":
+            st.warning("Only admin can manage users.")
+        else:
+            users = st.session_state.users
+            st.dataframe(pd.DataFrame(users).T)
+            with st.form("Add User"):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                role = st.selectbox("Role", ["admin", "sales", "accountant"])
+                submitted = st.form_submit_button("Add User")
+                if submitted:
+                    if username in users:
+                        st.error("User already exists.")
+                    else:
+                        users[username] = {"password": password, "role": role}
+                        st.session_state.users = users
+                        try:
+                            pd.DataFrame(users).T.reset_index().rename(columns={"index":"username"}).to_excel(users_file, index=False)
+                        except Exception as e:
+                            st.warning(f"Could not save users file: {e}")
+                        st.success(f"User {username} added successfully")
