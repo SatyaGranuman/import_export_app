@@ -1,0 +1,2 @@
+SlNo,Supplier,ShortText,QtyNetWt,UOM,UnitRate,Total,PortOfLoading,PaymentOption,ShipmentStatus,ProformaInvoice,InvoiceNumber,BillOfLading,PartPayments,DueAmount,Qty,InvoiceNo,PaidAmount
+1,Kunal,HD,,MT,700.0,70000.0,Kuwait,10%,Yet to Dispatch,23423A1,,,,63000.0,100.0,,7000.0

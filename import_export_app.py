@@ -2,179 +2,129 @@ import streamlit as st
 import pandas as pd
 import os
 
-# ------------------------
-# File paths
-# ------------------------
-users_file = "users.xlsx"
-purchases_file = "purchases.xlsx"
-sales_file = "sales.xlsx"
+# === FILE PATHS ===
+USERS_FILE = "users.csv"
+PURCHASES_FILE = "purchases.csv"
+SALES_FILE = "sales.csv"
+ACCOUNTS_FILE = "accounts.csv"
 
-# ------------------------
-# Default users
-# ------------------------
-default_users = {
-    "admin": {"password": "admin123", "role": "admin"},
-    "sales": {"password": "sales123", "role": "sales"},
-    "accountant": {"password": "acc123", "role": "accountant"}
-}
+# === DEFAULT COLUMNS ===
+PURCHASE_COLUMNS = ["Date", "Supplier", "Material", "Quantity", "Rate", "Total", "Remarks"]
+SALES_COLUMNS = ["Date", "Customer", "Material", "Quantity", "Rate", "Total", "Remarks"]
+ACCOUNT_COLUMNS = ["Date", "Description", "Credit", "Debit", "Balance"]
 
-# ------------------------
-# Initialize session state
-# ------------------------
+# === FUNCTION TO LOAD OR CREATE CSV FILE ===
+def load_csv(file, columns):
+    if not os.path.exists(file) or os.stat(file).st_size == 0:
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(file, index=False)
+    else:
+        try:
+            df = pd.read_csv(file)
+        except pd.errors.EmptyDataError:
+            df = pd.DataFrame(columns=columns)
+            df.to_csv(file, index=False)
+    return df
+
+# === LOAD USERS CSV ===
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        # create default users file
+        with open(USERS_FILE, "w") as f:
+            f.write("username,password,role\nadmin,admin123,admin\nuser1,user123,user\nuser2,user234,user\n")
+    df = pd.read_csv(USERS_FILE)
+    return df.set_index("username").T.to_dict()
+
+# === INITIAL SETUP ===
+if "users" not in st.session_state:
+    st.session_state.users = load_users()
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "username" not in st.session_state:
-    st.session_state.username = ""
-if "role" not in st.session_state:
-    st.session_state.role = ""
-if "users" not in st.session_state:
-    try:
-        st.session_state.users = pd.read_excel(users_file).set_index("username").T.to_dict()
-    except Exception:
-        st.session_state.users = default_users.copy()
+    st.session_state.username = None
+    st.session_state.role = None
 
-# ------------------------
-# Login function
-# ------------------------
-def login():
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        users = st.session_state.users
-        if username in users and users[username]["password"] == password:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            st.session_state.role = users[username]["role"]
-            st.success(f"Logged in as {username} ({st.session_state.role})")
-        else:
-            st.error("Invalid username or password")
+# === APP TITLE ===
+st.title("📦 Import Export Management App")
 
-# ------------------------
-# Logout function
-# ------------------------
-def logout():
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.success("Logged out successfully")
-
-# ------------------------
-# Load Excel safely
-# ------------------------
-def load_excel(file_path, columns=[]):
-    try:
-        if os.path.exists(file_path):
-            df = pd.read_excel(file_path)
-        else:
-            df = pd.DataFrame(columns=columns)
-        return df
-    except Exception as e:
-        st.error(f"Error reading {file_path}: {e}")
-        return pd.DataFrame(columns=columns)
-
-# ------------------------
-# Save Excel safely
-# ------------------------
-def save_excel(df, file_path):
-    try:
-        df.to_excel(file_path, index=False)
-    except Exception as e:
-        st.error(f"Error saving {file_path}: {e}")
-
-# ------------------------
-# App main
-# ------------------------
+# === LOGIN SECTION ===
 if not st.session_state.logged_in:
-    login()
-else:
-    st.sidebar.write(f"Logged in as: {st.session_state.username} ({st.session_state.role})")
-    if st.sidebar.button("Logout"):
-        logout()
+    input_username = st.text_input("Username")
+    input_password = st.text_input("Password", type="password")
 
-    tab = st.sidebar.selectbox("Select Tab", ["Purchases", "Sales", "Accounting", "User Management"])
-
-    # ------------------------
-    # Purchases Tab
-    # ------------------------
-    if tab == "Purchases":
-        st.header("Purchase Management")
-        purchases_columns = ["Date", "Item", "Quantity", "Price"]
-        df_purchases = load_excel(purchases_file, purchases_columns)
-        st.dataframe(df_purchases)
-
-        if st.session_state.role in ["admin", "sales"]:
-            with st.form("Add Purchase"):
-                date = st.date_input("Date")
-                item = st.text_input("Item")
-                qty = st.number_input("Quantity", min_value=1)
-                price = st.number_input("Price", min_value=0.0)
-                submitted = st.form_submit_button("Add Purchase")
-                if submitted:
-                    new_row = pd.DataFrame([[date, item, qty, price]], columns=purchases_columns)
-                    df_purchases = pd.concat([df_purchases, new_row], ignore_index=True)
-                    save_excel(df_purchases, purchases_file)
-                    st.success("Purchase added successfully")
-
-    # ------------------------
-    # Sales Tab
-    # ------------------------
-    elif tab == "Sales":
-        st.header("Sales Management")
-        sales_columns = ["Date", "Item", "Quantity", "Price"]
-        df_sales = load_excel(sales_file, sales_columns)
-        st.dataframe(df_sales)
-
-        if st.session_state.role in ["admin", "sales"]:
-            with st.form("Add Sale"):
-                date = st.date_input("Date")
-                item = st.text_input("Item")
-                qty = st.number_input("Quantity", min_value=1)
-                price = st.number_input("Price", min_value=0.0)
-                submitted = st.form_submit_button("Add Sale")
-                if submitted:
-                    new_row = pd.DataFrame([[date, item, qty, price]], columns=sales_columns)
-                    df_sales = pd.concat([df_sales, new_row], ignore_index=True)
-                    save_excel(df_sales, sales_file)
-                    st.success("Sale added successfully")
-
-    # ------------------------
-    # Accounting Tab
-    # ------------------------
-    elif tab == "Accounting":
-        st.header("Profit & Loss")
-        df_purchases = load_excel(purchases_file, ["Date", "Item", "Quantity", "Price"])
-        df_sales = load_excel(sales_file, ["Date", "Item", "Quantity", "Price"])
-        total_purchase = df_purchases["Price"].sum() if not df_purchases.empty else 0
-        total_sales = df_sales["Price"].sum() if not df_sales.empty else 0
-        profit = total_sales - total_purchase
-        st.metric("Total Purchases", total_purchase)
-        st.metric("Total Sales", total_sales)
-        st.metric("Profit / Loss", profit)
-
-    # ------------------------
-    # User Management Tab
-    # ------------------------
-    elif tab == "User Management":
-        st.header("User Management")
-        if st.session_state.role != "admin":
-            st.warning("Only admin can manage users.")
+    if st.button("Login"):
+        user_data = st.session_state.users.get(input_username)
+        if user_data and user_data["password"] == input_password:
+            st.session_state.logged_in = True
+            st.session_state.username = input_username
+            st.session_state.role = user_data["role"]
+            st.success(f"Welcome {input_username}!")
+            st.rerun()
         else:
-            users = st.session_state.users
-            st.dataframe(pd.DataFrame(users).T)
-            with st.form("Add User"):
-                username = st.text_input("Username")
-                password = st.text_input("Password", type="password")
-                role = st.selectbox("Role", ["admin", "sales", "accountant"])
-                submitted = st.form_submit_button("Add User")
-                if submitted:
-                    if username in users:
-                        st.error("User already exists.")
-                    else:
-                        users[username] = {"password": password, "role": role}
-                        st.session_state.users = users
-                        try:
-                            pd.DataFrame(users).T.reset_index().rename(columns={"index":"username"}).to_excel(users_file, index=False)
-                        except Exception as e:
-                            st.warning(f"Could not save users file: {e}")
-                        st.success(f"User {username} added successfully")
+            st.error("Invalid username or password.")
+else:
+    st.sidebar.success(f"Logged in as: {st.session_state.username} ({st.session_state.role})")
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.session_state.role = None
+        st.rerun()
+
+    # === LOAD DATA ===
+    purchases = load_csv(PURCHASES_FILE, PURCHASE_COLUMNS)
+    sales = load_csv(SALES_FILE, SALES_COLUMNS)
+    accounts = load_csv(ACCOUNTS_FILE, ACCOUNT_COLUMNS)
+
+    # === MENU ===
+    menu_options = ["Purchase", "Sales"]
+    if st.session_state.role == "admin":
+        menu_options.append("Accounts")
+    menu = st.sidebar.radio("Select Section", menu_options)
+
+    # === PURCHASE SECTION ===
+    if menu == "Purchase":
+        st.header("🧾 Purchase Records")
+        st.dataframe(purchases)
+
+        with st.expander("➕ Add New Purchase Entry"):
+            new_data = {}
+            for col in PURCHASE_COLUMNS:
+                new_data[col] = st.text_input(col, key=f"purchase_{col}")
+            if st.button("Save Purchase Entry"):
+                purchases.loc[len(purchases)] = list(new_data.values())
+                purchases.to_csv(PURCHASES_FILE, index=False)
+                st.success("✅ Purchase entry saved!")
+                st.rerun()
+
+    # === SALES SECTION ===
+    elif menu == "Sales":
+        st.header("💰 Sales Records")
+        st.dataframe(sales)
+
+        with st.expander("➕ Add New Sales Entry"):
+            new_data = {}
+            for col in SALES_COLUMNS:
+                new_data[col] = st.text_input(col, key=f"sales_{col}")
+            if st.button("Save Sales Entry"):
+                sales.loc[len(sales)] = list(new_data.values())
+                sales.to_csv(SALES_FILE, index=False)
+                st.success("✅ Sales entry saved!")
+                st.rerun()
+
+    # === ACCOUNTS SECTION (Admin Only) ===
+    elif menu == "Accounts":
+        if st.session_state.role != "admin":
+            st.error("🚫 Access denied. Only admin can view this section.")
+        else:
+            st.header("📒 Account Records (Admin Only)")
+            st.dataframe(accounts)
+
+            with st.expander("➕ Add New Account Entry"):
+                new_data = {}
+                for col in ACCOUNT_COLUMNS:
+                    new_data[col] = st.text_input(col, key=f"account_{col}")
+                if st.button("Save Account Entry"):
+                    accounts.loc[len(accounts)] = list(new_data.values())
+                    accounts.to_csv(ACCOUNTS_FILE, index=False)
+                    st.success("✅ Account entry saved!")
+                    st.rerun()
